@@ -42,6 +42,102 @@
     padding:32px 20px 80px;
   }
 
+  /* AI Chat panel — compact */
+  .ai-chat{
+    border:1.5px solid var(--sumi);
+    background:var(--card);
+    margin-bottom:18px;
+    font-size:13px;
+  }
+  .ai-bar{
+    display:flex;
+    align-items:center;
+    gap:8px;
+    padding:6px 8px;
+  }
+  .ai-bar .dot{
+    width:7px;height:7px;border-radius:50%;
+    background:var(--midori);
+    flex:0 0 auto;
+  }
+  .ai-bar .dot.off{ background:var(--shu); }
+  .ai-bar input[type="text"]{
+    flex:1;
+    font-family:'Inter',sans-serif;
+    font-size:13px;
+    padding:7px 9px;
+    border:1px solid var(--line);
+    background:#fff;
+  }
+  .ai-bar button.send{
+    font-size:12px;
+    font-weight:700;
+    padding:7px 12px;
+    border:1px solid var(--sumi);
+    background:var(--sumi);
+    color:var(--washi);
+    cursor:pointer;
+    flex:0 0 auto;
+  }
+  .ai-bar button.send:disabled{ opacity:.5; cursor:default; }
+  .ai-bar button.gear{
+    font-size:14px;
+    padding:6px 9px;
+    border:1px solid var(--line);
+    background:transparent;
+    cursor:pointer;
+    flex:0 0 auto;
+    color:var(--sumi-soft);
+  }
+  .ai-settings-row{
+    display:none;
+    gap:6px;
+    padding:0 8px 8px;
+  }
+  .ai-settings-row.open{ display:flex; }
+  .ai-settings-row input{
+    flex:1;
+    font-size:12px;
+    padding:6px 8px;
+    border:1px solid var(--line);
+    background:#fff;
+  }
+  .ai-settings-row button{
+    font-size:11px;
+    padding:6px 10px;
+    border:1px solid var(--sumi);
+    background:transparent;
+    cursor:pointer;
+    color:var(--sumi-soft);
+  }
+  .ai-answer{
+    display:none;
+    position:relative;
+    padding:8px 28px 10px 10px;
+    border-top:1px dashed var(--line);
+    max-height:180px;
+    overflow-y:auto;
+    line-height:1.55;
+    white-space:pre-wrap;
+  }
+  .ai-answer.show{ display:block; }
+  .ai-answer .q{ color:var(--sumi-soft); font-size:12px; margin-bottom:5px; }
+  .ai-answer .a{ font-size:13.5px; }
+  .ai-answer.err .a{ color:var(--shu); }
+  .ai-answer .close-btn{
+    position:absolute;
+    top:6px;
+    right:6px;
+    border:none;
+    background:transparent;
+    color:var(--sumi-soft);
+    font-size:14px;
+    line-height:1;
+    cursor:pointer;
+    padding:2px 6px;
+  }
+  .ai-answer .close-btn:hover{ color:var(--shu); }
+
   header.top{
     display:flex;
     align-items:baseline;
@@ -611,6 +707,25 @@
     <div class="title">日本語ノート<small>CADERNO PESSOAL DE JAPONÊS</small></div>
     <div class="stamp">頑張って</div>
   </header>
+
+  <div class="ai-chat" id="ai-chat">
+    <div class="ai-bar">
+      <span class="dot" id="ai-status-dot"></span>
+      <input type="text" id="ai-chat-input" placeholder="Pergunte algo ou peça uma tradução...">
+      <button class="send" id="ai-chat-send">Perguntar</button>
+      <button class="gear" id="ai-gear" title="Configurar chave da API">⚙</button>
+    </div>
+    <div class="ai-settings-row" id="ai-settings-row">
+      <input type="password" id="ai-key-input" placeholder="Chave da API Gemini" value="AIzaSyCns11WVsgA1dY1R5dEOjd1kBVTqU6u8to">
+      <button id="ai-key-save">Salvar</button>
+      <button id="ai-key-clear">Limpar</button>
+    </div>
+    <div class="ai-answer" id="ai-answer">
+      <button class="close-btn" id="ai-answer-close" title="Fechar">✕</button>
+      <div class="q" id="ai-answer-q"></div>
+      <div class="a" id="ai-answer-a"></div>
+    </div>
+  </div>
 
   <nav class="tabs" id="tabs">
     <button data-tab="hiragana" class="active"><span class="jp-tab">あ</span>Hiragana</button>
@@ -1531,6 +1646,104 @@ function renderDialog(){
 document.getElementById('toggle-romaji').addEventListener('change', renderDialog);
 document.getElementById('toggle-pt').addEventListener('change', renderDialog);
 document.getElementById('toggle-notes').addEventListener('change', renderDialog);
+
+/* ============ AI CHAT (Gemini) — minimalist single-answer bar ============ */
+let geminiKey = document.getElementById('ai-key-input').value.trim();
+let aiHistory = []; // {role:'user'|'model', text}
+const AI_SYSTEM_PROMPT = "Você é um tutor de japonês, integrado a um app de estudo pessoal que já cobre hiragana, katakana, kanji, gramática e vocabulário. Responda em português do Brasil, de forma direta, curta e didática (poucos parágrafos). Quando der exemplos em japonês, inclua: a frase em japonês, a romanização (rōmaji) e a tradução. Ao explicar gramática, aponte a estrutura formal e o nível de formalidade quando relevante. Se não tiver certeza de uma nuance, diga isso explicitamente em vez de inventar.";
+const GEMINI_MODELS = ["gemini-2.5-flash", "gemini-2.0-flash", "gemini-1.5-flash-latest"]; // tentados em ordem, com fallback
+
+function setAiStatus(ok){
+  document.getElementById('ai-status-dot').classList.toggle('off', !ok);
+}
+setAiStatus(!!geminiKey);
+
+document.getElementById('ai-gear').addEventListener('click', ()=>{
+  document.getElementById('ai-settings-row').classList.toggle('open');
+});
+document.getElementById('ai-key-save').addEventListener('click', ()=>{
+  geminiKey = document.getElementById('ai-key-input').value.trim();
+  setAiStatus(!!geminiKey);
+  document.getElementById('ai-settings-row').classList.remove('open');
+});
+document.getElementById('ai-key-clear').addEventListener('click', ()=>{
+  document.getElementById('ai-key-input').value = '';
+  geminiKey = '';
+  setAiStatus(false);
+});
+
+function showAnswer(question, text, isError){
+  const box = document.getElementById('ai-answer');
+  document.getElementById('ai-answer-q').textContent = question ? ('Você: ' + question) : '';
+  document.getElementById('ai-answer-a').textContent = text;
+  box.classList.add('show');
+  box.classList.toggle('err', !!isError);
+}
+
+async function callGeminiModel(model, contents){
+  const resp = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${encodeURIComponent(geminiKey)}`, {
+    method:'POST',
+    headers:{'Content-Type':'application/json'},
+    body: JSON.stringify({ contents })
+  });
+  const data = await resp.json().catch(()=>null);
+  return { ok: resp.ok, status: resp.status, data };
+}
+
+async function askGemini(userText){
+  if(!geminiKey){
+    showAnswer(userText, "Nenhuma chave configurada. Clique em ⚙ e cole sua chave da API Gemini.", true);
+    return;
+  }
+  aiHistory.push({role:'user', text:userText});
+  const sendBtn = document.getElementById('ai-chat-send');
+  sendBtn.disabled = true;
+  showAnswer(userText, "Pensando...", false);
+
+  const contents = [
+    { role:'user', parts:[{text: AI_SYSTEM_PROMPT}] },
+    { role:'model', parts:[{text: "Entendido. Estou pronto para tirar dúvidas de japonês."}] },
+    ...aiHistory.map(m=>({ role: m.role==='user' ? 'user':'model', parts:[{text:m.text}] }))
+  ];
+
+  let lastErr = null;
+  for(const model of GEMINI_MODELS){
+    try{
+      const { ok, status, data } = await callGeminiModel(model, contents);
+      if(ok){
+        const text = data?.candidates?.[0]?.content?.parts?.map(p=>p.text).join('') || "(resposta vazia)";
+        aiHistory.push({role:'model', text});
+        showAnswer(userText, text, false);
+        sendBtn.disabled = false;
+        return;
+      }
+      // 404 = modelo não existe nessa conta/versão da API -> tenta o próximo da lista
+      const msg = (data && data.error && data.error.message) ? data.error.message : `Erro HTTP ${status}`;
+      lastErr = `[${model}] ${msg}`;
+      if(status !== 404) break; // erro que não é "modelo não encontrado" já para (ex: chave inválida, cota)
+    }catch(err){
+      // Isto é o sintoma típico de bloqueio de rede/CORS (ex: dentro do preview do Claude)
+      lastErr = `Falha de conexão (${err.message}). Se você está vendo isto dentro do preview do Claude, baixe o arquivo .html e abra-o diretamente no navegador — o preview bloqueia chamadas de rede externas.`;
+    }
+  }
+  showAnswer(userText, lastErr || "Erro desconhecido.", true);
+  sendBtn.disabled = false;
+}
+
+function submitAiChat(){
+  const input = document.getElementById('ai-chat-input');
+  const text = input.value.trim();
+  if(!text) return;
+  input.value = '';
+  askGemini(text);
+}
+document.getElementById('ai-chat-send').addEventListener('click', submitAiChat);
+document.getElementById('ai-answer-close').addEventListener('click', ()=>{
+  document.getElementById('ai-answer').classList.remove('show');
+});
+document.getElementById('ai-chat-input').addEventListener('keydown', e=>{
+  if(e.key==='Enter'){ e.preventDefault(); submitAiChat(); }
+});
 
 /* ============ INIT ============ */
 renderGrammar();
